@@ -5,9 +5,12 @@ import javax.persistence.Entity;
 import javax.persistence.Id;
 import javax.persistence.Table;
 
+import org.hibernate.annotations.DynamicUpdate;
+
 
 @Entity
 @Table(name = "data")
+@DynamicUpdate
 public class Data {
 	@Id
 	@Column(name="CODE")
@@ -71,5 +74,13 @@ public class Data {
     public void setCname(String cname) {
         this.cname = cname;
     }
+
+	@Override
+	public String toString() {
+		return "Data [code=" + code + ", symbol=" + symbol + ", rate=" + rate + ", description=" + description
+				+ ", rate_float=" + rate_float + ", cname=" + cname + "]";
+	}
+    
+    
 
 }

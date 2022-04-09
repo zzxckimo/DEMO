@@ -1,18 +1,23 @@
 package Test.Demo.td.service;
 
+import java.beans.PropertyDescriptor;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.text.DateFormat;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.List;
 import java.util.Locale;
-
-import javax.xml.bind.JAXBException;
+import java.util.Map;
+import java.util.stream.Stream;
 
 import org.modelmapper.ModelMapper;
 import org.modelmapper.convention.MatchingStrategies;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.BeanWrapperImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -28,11 +33,11 @@ public class ApiService {
 	@Autowired
 	private  DataRepository dataRepository;
 	
-	public ResponseBean getCoindeskAPI() {
+	public String getCoindeskAPI() {
 		InputStreamReader streamReader = null;
 		BufferedReader in = null;
 		HttpURLConnection con = null;
-		ResponseBean responseBean = new ResponseBean();
+		String contentString = null;
 		try {
 			URL url = new URL("https://api.coindesk.com/v1/bpi/currentprice.json");
 			con = (HttpURLConnection) url.openConnection();
@@ -57,25 +62,15 @@ public class ApiService {
 					content.append(line);
 				}
 				// 輸出結果
-				System.out.println(content);
+//				System.out.println(content);
+				contentString = content.toString();
 				
-				// 解析結果
-				responseBean = new Gson().fromJson(content.toString(), ResponseBean.class);
-				
-				DateFormat  df = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
-				SimpleDateFormat  dfUTC = new SimpleDateFormat("MMM d, yyyy HH:mm:ss", Locale.US);
-				SimpleDateFormat  dfBST = new SimpleDateFormat("MMM d, yyyy 'at' HH:mm", Locale.UK);
-				SimpleDateFormat  dfCST = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.CHINA);
-				
-				System.out.println(df.format(dfUTC.parse(responseBean.getTime().getUpdated())));
-				System.out.println(df.format(dfBST.parse(responseBean.getTime().getUpdateduk())));
-				System.out.println(df.format(dfCST.parse(responseBean.getTime().getUpdatediso())));
 				
 			} else {
 				// 非200 讀取error stream
 				streamReader = new InputStreamReader(con.getErrorStream());
 				in = new BufferedReader(streamReader);
-				responseBean = null;
+				contentString = null;
 			}
 
 			
@@ -101,11 +96,11 @@ public class ApiService {
 			con.disconnect();
 			
 		}
-		return responseBean;
+		return contentString;
 	}
 	
 	public void insertDB( ResponseBean responseBean )  {
-		System.out.println(dataRepository.findAll());
+
 		dataRepository.deleteAll();
 		ModelMapper modelMapper = new ModelMapper();
 		modelMapper.getConfiguration().setMatchingStrategy(MatchingStrategies.STRICT);
@@ -121,4 +116,108 @@ public class ApiService {
 		dataRepository.save(dataBean);
 	}
 	
+	public List<Data> queryData(  )  {
+		return dataRepository.findAll();
+	}
+	
+	public void formatDate( ResponseBean responseBean ) throws ParseException  {
+		DateFormat  df = new SimpleDateFormat("yyyy/MM/dd HH:mm:ss");
+		SimpleDateFormat  dfUTC = new SimpleDateFormat("MMM d, yyyy HH:mm:ss", Locale.US);
+		SimpleDateFormat  dfBST = new SimpleDateFormat("MMM d, yyyy 'at' HH:mm", Locale.UK);
+		SimpleDateFormat  dfCST = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.CHINA);
+		
+		responseBean.getTime().setUpdated(df.format(dfUTC.parse(responseBean.getTime().getUpdated())));
+		responseBean.getTime().setUpdateduk(df.format(dfBST.parse(responseBean.getTime().getUpdateduk())));
+		responseBean.getTime().setUpdatediso(df.format(dfCST.parse(responseBean.getTime().getUpdatediso())));
+	}
+	
+	public String insertData( Map<String, Object> params ){
+		
+		if(params.get("code") != null && params.get("symbol") != null && params.get("rate") != null && params.get("description") != null && params.get("rate_float") != null){
+			String code =  params.get("code").toString();
+			String symbol =  params.get("symbol").toString();
+			String rate =  params.get("rate").toString();
+			String description =  params.get("description").toString();
+			double rate_float = Double.parseDouble(params.get("rate_float").toString()) ;
+			Data data = dataRepository.findByCode(code);
+			if(data != null) {
+				return "資料已存在";
+			}else {
+				String cname = "";
+				switch(code) { 
+		            case "USD": 
+		            	cname = "美元";
+		                break; 
+		            case "EUR": 
+		            	cname = "歐元";
+		                break; 
+		            case "GBP": 
+		            	cname = "英鎊";
+		                break; 
+		        }
+				if (dataRepository.insert(code, symbol, rate, description, rate_float, cname) > 0) {
+					return "新增成功";
+				}else {
+					return "新增失敗";
+				}
+			}
+		}
+		return "缺少參數!";
+	}
+	
+	public String deleteData( Map<String, Object> params ){
+		
+		if( params.get("code") != null ){
+			String code =  params.get("code").toString();
+			if (dataRepository.delete(code) > 0) {
+				return "刪除成功";
+			}else {
+				return "刪除失敗";
+			}
+		}
+		return "缺少參數!";
+	}
+	
+public String updateDate( Map<String, Object> params ){
+		
+		if( params.get("code") != null ){
+			ModelMapper modelMapper = new ModelMapper();
+			modelMapper.getConfiguration().setMatchingStrategy(MatchingStrategies.STRICT);
+			modelMapper.getConfiguration().setAmbiguityIgnored(true);
+			Data dataBean =new Data();
+			modelMapper.map(params, dataBean);
+			
+			Data dataOrig = dataRepository.findByCode(dataBean.getCode().toString());	
+			if(dataOrig != null) {
+
+				double rate_float = dataOrig.getRate_float();
+				copyNotNullProperties(dataBean,dataOrig);
+				//判斷rate_float 是否無輸入
+				if(params.get("rate_float") == null) {
+					dataOrig.setRate_float(rate_float);
+				}
+			}else {
+				return "無更新資料";
+			}
+			
+			if (dataRepository.save(dataOrig).getCode()  != null) {
+				return "更新成功";
+			}else {
+				return "更新失敗";
+			}
+		}
+		return "缺少參數!";
+	}
+
+	public static void copyNotNullProperties(Object src,Object target){
+	    BeanUtils.copyProperties(src,target,getNullPropertyNames(src));
+	}
+	
+	private static String[] getNullPropertyNames(Object object) {
+	    final BeanWrapperImpl wrapper = new BeanWrapperImpl(object);
+	    return Stream.of(wrapper.getPropertyDescriptors())
+	            .map(PropertyDescriptor::getName)
+	            .filter(propertyName -> wrapper.getPropertyValue(propertyName) == null)
+	            .toArray(String[]::new);
+	}
 }
