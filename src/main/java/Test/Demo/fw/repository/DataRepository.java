@@ -12,18 +12,18 @@ import Test.Demo.fw.entity.Data;
 public interface DataRepository  extends JpaRepository<Data, String>{
 	@Transactional
 	@Modifying
-	@Query(value = "insert into testdb.data values ( ?1, ?2, ?3, ?4, ?5, ?6)"
+	@Query(value = "insert into data values ( ?1, ?2, ?3, ?4, ?5, ?6)"
 			, nativeQuery=true)
-	int insert(String code, String symbol, String rate, String description, double rate_float
-			, String cname);
+	int insert(String code, String cname, String rate, String description, double rate_float
+			,String symbol);
 	
 	@Transactional
 	@Modifying
-	@Query(value = "delete from testdb.data where code = ?1"
+	@Query(value = "delete from data where code = ?1"
 			, nativeQuery=true)
 	int delete(String code);
 	
-	@Query(value = "select * from testdb.data where code = ?1"
+	@Query(value = "select * from data where code = ?1"
 			, nativeQuery=true)
 	Data findByCode(String code);
 	
